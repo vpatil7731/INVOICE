@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="mr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Invoice Generator — मराठी (Offline + Payment Received)</title>
+<style>
+  body { font-family: Arial, sans-serif; background:#f8fafc; margin:20px; }
+  .container { background:#fff; padding:20px; border-radius:10px; max-width:900px; margin:auto; box-shadow:0 0 10px rgba(0,0,0,0.1); }
+  input, select, textarea { width:100%; padding:6px; margin-top:4px; border:1px solid #ccc; border-radius:4px; }
+  table { width:100%; border-collapse:collapse; margin-top:8px; border:1px solid #ddd; }
+  th, td { border:1px solid #ddd; padding:6px; }
+  th { background:#f1f5f9; }
+  button { cursor:pointer; }
+  .btn { border:none; border-radius:4px; padding:8px 12px; color:#fff; font-weight:600; margin-top:10px; }
+  .blue { background:#2563eb; }
+  .green { background:#16a34a; }
+  .orange { background:#f59e0b; }
+  .gray { background:#475569; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h2>Invoice Generator — मराठी (Offline + Payment Received)</h2>
+  <p>फॉर्म भरून Preview करा आणि PDF डाउनलोड करा.</p>
+
+  <label>Company (कंपनी)</label>
+  <input id="company" value="VRUSHABH PATIL, KOGANOLI (8088028161)">
+  <label>Customer (ग्राहक)</label>
+  <input id="customer" placeholder="ENTER CUSTOMER NAME">
+  <label>Customer Phone (ग्राहक मोबाईल)</label>
+<input type="text" id="customerPhone" placeholder="ENTER MOB NUMBER">
+  <div style="display:flex; gap:10px; margin-top:8px;">
+    <div style="flex:1">
+      <label>Payment Method (पेमेंट)</label>
+      <select id="payment">
+        <option>Online</option>
+        <option>Cheque</option>
+        <option>UPI</option>
+        <option>Cash</option>
+        <option>Bank Transfer</option>
+      </select>
+    </div>
+    <div style="flex:1">
+      <label>Date (दिनांक)</label>
+      <input type="date" id="date">
+    </div>
+    <div style="flex:1">
+      <label>Tax</label>
+      <select id="taxOpt">
+        <option>No Tax (नाही)</option>
+        <option>GST 5%</option>
+        <option>GST 12%</option>
+      </select>
+    </div>
+  </div>
+
+  <h3 style="margin-top:18px;">Items (आयटम्स)</h3>
+  <table id="itemsTable">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Item वर्णन</th>
+        <th>Qty</th>
+        <th>Rate (₹)</th>
+        <th>Total (₹)</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <button type="button" onclick="addItem()" style="background:#2563eb;color:#fff;border:none;padding:6px 10px;border-radius:4px;margin-top:4px;">+ आयटम जोडा</button>
+
+  <div style="margin-top:12px; display:flex; flex-wrap:wrap; gap:10px;">
+    <div style="flex:1">
+      <label>Previous Balance (मागील शिल्लक ₹)</label>
+      <input id="prevBalanceInput" type="number" value="0">
+    </div>
+    <div style="flex:1">
+      <label>Payment Received (आजची जमा ₹)</label>
+      <input id="paymentReceived" type="number" value="0">
+    </div>
+    <div style="flex:1">
+      <label>Bank Details (बँक तपशील)</label>
+      <textarea id="bankdetails">Bank: BANK OF INDIA
+A/C NO: 1108010001108
+IFSC: BKID0001108
+BRANCH: KOGANOLI
+MOB NO: 8088028161
+Name: Vrushabh J. Patil</textarea>
+    </div>
+  </div>
+
+  <div style="margin-top:10px;">
+    <label>Notes / टिपणी</label>
+    <textarea id="notes">धन्यवाद! पुढील व्यवहारासाठी संपर्क करा.</textarea>
+  </div>
+
+  <div style="margin-top:15px; display:flex; gap:10px; flex-wrap:wrap;">
+    <button class="btn blue" onclick="renderPreview()">Preview Invoice</button>
+    <button class="btn green" onclick="downloadPDF()">Download PDF</button>
+    <button class="btn orange" onclick="saveJSON()">Save JSON</button>
+    <button class="btn gray" onclick="sampleData()">Sample भरा</button>
+  </div>
+
+  <hr style="margin:20px 0;">
+  <div id="previewArea"></div>
+</div>
+
+<script src="jspdf.umd.min.js"></script>
+<script src="html2canvas.min.js"></script>
+<script>
+function toNumber(v){return parseFloat(v)||0;}
+function escapeHtml(t){return t.replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
+
+function collectData(){
+  const items = Array.from(document.querySelectorAll('#itemsTable tbody tr')).map(r=>({
+    desc: r.querySelector('.item-desc').value,
+    qty: toNumber(r.querySelector('.item-qty').value),
+    rate: toNumber(r.querySelector('.item-rate').value),
+    total: toNumber(r.querySelector('.item-qty').value)*toNumber(r.querySelector('.item-rate').value)
+  }));
+  const grand = items.reduce((s,i)=>s+i.total,0);
+  const prevBalance = toNumber(document.getElementById('prevBalanceInput').value);
+  const paymentReceived = toNumber(document.getElementById('paymentReceived').value);
+  return {
+    company: document.getElementById('company').value,
+    customer: document.getElementById('customer').value,
+    date: document.getElementById('date').value,
+    payment: document.getElementById('payment').value,
+    taxOption: document.getElementById('taxOpt').value,
+    notes: document.getElementById('notes').value,
+    bankdetails: document.getElementById('bankdetails').value,
+    items,
+    grandTotal: grand,
+    prevBalance,
+    paymentReceived,
+    totalDue: grand + prevBalance - paymentReceived
+  };
+}
+
+function renderPreview(){
+  const d = collectData();
+  const itemsHtml = d.items.map((it, idx)=>`
+    <tr>
+      <td>${idx+1}</td>
+      <td>${escapeHtml(it.desc)}</td>
+      <td style="text-align:right">${it.qty}</td>
+      <td style="text-align:right">${it.rate.toLocaleString('en-IN')}</td>
+      <td style="text-align:right">${it.total.toLocaleString('en-IN')}</td>
+    </tr>`).join('');
+  document.getElementById('previewArea').innerHTML = `
+  <div id="invoiceForPdf" style="font-family:Arial,sans-serif;width:800px;padding:18px;background:#fff">
+    <div style="display:flex;justify-content:space-between">
+      <div><b>${escapeHtml(d.company)}</b><br>Payment: ${escapeHtml(d.payment)}</div>
+      <div style="text-align:right"><b>INVOICE</b><br>${escapeHtml(d.date)}</div>
+    </div><hr>
+    <b>Customer:</b> ${escapeHtml(d.customer)}<br><br>
+    <table style="width:100%;border-collapse:collapse;border:1px solid #ddd">
+      <thead style="background:#f3f6ff"><tr>
+        <th>#</th><th>Description</th><th>Qty</th><th>Rate (₹)</th><th>Total (₹)</th>
+      </tr></thead>
+      <tbody>${itemsHtml}</tbody>
+      <tfoot>
+        <tr><td colspan="4" style="text-align:right">Grand Total (₹)</td><td style="text-align:right">${d.grandTotal.toLocaleString('en-IN')}</td></tr>
+        <tr><td colspan="4" style="text-align:right">Previous Balance (₹)</td><td style="text-align:right">${d.prevBalance.toLocaleString('en-IN')}</td></tr>
+        <tr><td colspan="4" style="text-align:right">Payment Received (₹)</td><td style="text-align:right">${d.paymentReceived.toLocaleString('en-IN')}</td></tr>
+        <tr style="font-weight:700;background:#e0f2fe"><td colspan="4" style="text-align:right">Total Due (₹)</td><td style="text-align:right">${d.totalDue.toLocaleString('en-IN')}</td></tr>
+      </tfoot>
+    </table>
+    <br><b>Bank Details:</b><br>${escapeHtml(d.bankdetails).replace(/\n/g,'<br>')}
+    <br><br><b>Notes:</b> ${escapeHtml(d.notes)}
+  </div>`;
+}
+
+async function downloadPDF(){
+  const { jsPDF } = window.jspdf;
+  const element = document.getElementById('invoiceForPdf');
+  if(!element){alert('Preview करा आधी!');return;}
+  const canvas = await html2canvas(element);
+  const imgData = canvas.toDataURL('image/png');
+  const pdf = new jsPDF('p','mm','a4');
+  const width = pdf.internal.pageSize.getWidth();
+  const height = canvas.height * width / canvas.width;
+  pdf.addImage(imgData,'PNG',0,0,width,height);
+  pdf.save('invoice.pdf');
+}
+
+function saveJSON(){
+  const data = collectData();
+  const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'invoice_data.json'; a.click();
+}
+
+function sampleData(){
+  document.getElementById('company').value='Vrushabh Patil, Koganoli (8088028161)';
+  document.getElementById('customer').value='M/s. P.V. Sheti (HUF), Jainyal';
+  document.getElementById('payment').value='Online';
+  document.getElementById('taxOpt').value='No Tax (नाही)';
+  document.getElementById('prevBalanceInput').value=12000;
+  document.getElementById('paymentReceived').value=10000;
+  document.querySelector('#itemsTable tbody').innerHTML='';
+  addItem();
+  const firstRow=document.querySelector('#itemsTable tbody tr');
+  firstRow.querySelector('.item-desc').value='Bahubali supplement';
+  firstRow.querySelector('.item-qty').value=20;
+  firstRow.querySelector('.item-rate').value=1260;
+  updateItemsTotal();
+}
+
+function addItem(){
+  const tbody = document.querySelector('#itemsTable tbody');
+  const row = document.createElement('tr');
+  row.innerHTML = `
+    <td>${tbody.children.length + 1}</td>
+    <td><input type="text" class="item-desc" placeholder="Item वर्णन" style="width:100%"></td>
+    <td><input type="number" class="item-qty" value="1" style="width:80px;text-align:right"></td>
+    <td><input type="number" class="item-rate" value="0" style="width:100px;text-align:right"></td>
+    <td class="item-total" style="text-align:right">₹0</td>
+    <td><button onclick="this.closest('tr').remove(); updateItemsTotal();" style="background:#ef4444;color:#fff;border:none;padding:4px 8px;border-radius:4px;">x</button></td>`;
+  tbody.appendChild(row);
+  row.querySelector('.item-qty').addEventListener('input', updateItemsTotal);
+  row.querySelector('.item-rate').addEventListener('input', updateItemsTotal);
+  updateItemsTotal();
+}
+
+function updateItemsTotal(){
+  const rows = document.querySelectorAll('#itemsTable tbody tr');
+  let total = 0;
+  rows.forEach(r=>{
+    const qty = parseFloat(r.querySelector('.item-qty').value)||0;
+    const rate = parseFloat(r.querySelector('.item-rate').value)||0;
+    const rowTotal = qty * rate;
+    r.querySelector('.item-total').textContent = '₹'+rowTotal.toLocaleString('en-IN');
+    total += rowTotal;
+  });
+}
+// ------------------ Local Storage for Customer Balance ------------------
+
+function saveCustomerBalance(customer, balance){
+  if(!customer) return;
+  let all = JSON.parse(localStorage.getItem('balances') || '{}');
+  all[customer] = balance;
+  localStorage.setItem('balances', JSON.stringify(all));
+}
+
+function getCustomerBalance(customer){
+  let all = JSON.parse(localStorage.getItem('balances') || '{}');
+  return all[customer] || 0;
+}
+
+// जेव्हा Preview होईल, तेव्हा balance जतन करा
+function renderPreview(){
+  const d = collectData();
+  saveCustomerBalance(d.customer, d.totalDue);  // balance save
+  const itemsHtml = d.items.map((it, idx)=>`
+    <tr>
+      <td>${idx+1}</td>
+      <td>${escapeHtml(it.desc)}</td>
+      <td style="text-align:right">${it.qty}</td>
+      <td style="text-align:right">${it.rate.toLocaleString('en-IN')}</td>
+      <td style="text-align:right">${it.total.toLocaleString('en-IN')}</td>
+    </tr>`).join('');
+
+  document.getElementById('previewArea').innerHTML = `
+  <div id="invoiceForPdf" style="font-family:Arial,sans-serif;width:800px;padding:18px;background:#fff">
+    <div style="display:flex;justify-content:space-between">
+      <div><b>${escapeHtml(d.company)}</b><br>Payment: ${escapeHtml(d.payment)}</div>
+      <div style="text-align:right"><b>INVOICE</b><br>${escapeHtml(d.date)}</div>
+    </div><hr>
+    <b>Customer:</b> ${escapeHtml(d.customer)}<br><br>
+    <table style="width:100%;border-collapse:collapse;border:1px solid #ddd">
+      <thead style="background:#f3f6ff">
+        <tr><th>#</th><th>Description</th><th>Qty</th><th>Rate (₹)</th><th>Total (₹)</th></tr>
+      </thead>
+      <tbody>${itemsHtml}</tbody>
+      <tfoot>
+        <tr><td colspan="4" style="text-align:right">Grand Total (₹)</td><td style="text-align:right">${d.grandTotal.toLocaleString('en-IN')}</td></tr>
+        <tr><td colspan="4" style="text-align:right">Previous Balance (₹)</td><td style="text-align:right">${d.prevBalance.toLocaleString('en-IN')}</td></tr>
+        <tr><td colspan="4" style="text-align:right">Payment Received (₹)</td><td style="text-align:right">${d.paymentReceived.toLocaleString('en-IN')}</td></tr>
+        <tr style="font-weight:700;background:#e0f2fe"><td colspan="4" style="text-align:right">Total Due (₹)</td><td style="text-align:right">${d.totalDue.toLocaleString('en-IN')}</td></tr>
+      </tfoot>
+    </table><br>
+    <b>Bank Details:</b><br>${escapeHtml(d.bankdetails).replace(/\n/g,'<br>')}
+    <br><br><b>Notes:</b> ${escapeHtml(d.notes)}
+  </div>`;
+}
+
+// जेव्हा customer निवडला जाईल, तेव्हा balance auto load करा
+// ✅ जेव्हा पेज उघडेल तेव्हाच balance auto-load करा
+window.addEventListener('load', ()=>{
+  const customer = document.getElementById('customer').value;
+  if(customer){
+    const prev = getCustomerBalance(customer);
+    document.getElementById('prevBalanceInput').value = prev;
+  }
+});
+
+// ✅ जेव्हा customer बदलतो तेव्हा balance पुन्हा auto-load करा
+document.getElementById('customer').addEventListener('change', ()=>{
+  const customer = document.getElementById('customer').value;
+  const prev = getCustomerBalance(customer);
+  document.getElementById('prevBalanceInput').value = prev;
+});
+
+document.getElementById('customer').addEventListener('change', ()=>{
+  const customer = document.getElementById('customer').value;
+  const prev = getCustomerBalance(customer);
+  document.getElementById('prevBalanceInput').value = prev;
+});
+// ✅ Auto Suggestion for Customer Names
+function loadCustomerSuggestions(){
+  const customerInput = document.getElementById('customer');
+  let all = JSON.parse(localStorage.getItem('balances') || '{}');
+  let names = Object.keys(all);
+
+  // आधीच असलेले datalist delete करून पुन्हा तयार करा
+  let oldList = document.getElementById('customerList');
+  if(oldList) oldList.remove();
+
+  const list = document.createElement('datalist');
+  list.id = 'customerList';
+  names.forEach(name=>{
+    const opt = document.createElement('option');
+    opt.value = name;
+    list.appendChild(opt);
+  });
+  document.body.appendChild(list);
+
+  // Customer input ला datalist जोडा
+  customerInput.setAttribute('list','customerList');
+}
+
+// ✅ पेज लोड झाल्यावर suggestions लोड करा
+window.addEventListener('load', loadCustomerSuggestions);
+
+// ✅ नवीन customer save झाल्यावर list अपडेट करा
+function refreshSuggestions(){
+  loadCustomerSuggestions();
+}
+
+// ✅ Save customer balance in local storage
+function saveCustomerBalance(name, balance){
+  if(!name) return;
+  let data = JSON.parse(localStorage.getItem('balances') || '{}');
+  data[name] = balance;
+  localStorage.setItem('balances', JSON.stringify(data));
+}
+// ✅ Auto Suggestion for Customer Names
+function loadCustomerSuggestions(){
+  const customerInput = document.getElementById('customer');
+  let all = JSON.parse(localStorage.getItem('balances') || '{}');
+  let names = Object.keys(all);
+
+  // आधीच असलेले datalist delete करून पुन्हा तयार करा
+  let oldList = document.getElementById('customerList');
+  if(oldList) oldList.remove();
+
+  const list = document.createElement('datalist');
+  list.id = 'customerList';
+  names.forEach(name=>{
+    const opt = document.createElement('option');
+    opt.value = name;
+    list.appendChild(opt);
+  });
+  document.body.appendChild(list);
+
+  // Customer input ला datalist जोडा
+  customerInput.setAttribute('list','customerList');
+}
+
+// ✅ पेज लोड झाल्यावर suggestions लोड करा
+window.addEventListener('load', loadCustomerSuggestions);
+
+// ✅ नवीन customer save झाल्यावर list अपडेट करा
+function refreshSuggestions(){
+  loadCustomerSuggestions();
+}
+
+</script>
+</body>
+</html>
